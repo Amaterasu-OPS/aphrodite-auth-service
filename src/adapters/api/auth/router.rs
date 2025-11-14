@@ -1,7 +1,7 @@
 use actix_web::{HttpResponse, Responder, Scope, get, post, web};
-use crate::adapters::spi::db::postgres_db::PostgresDB;
-use crate::application::use_cases::auth::par::ParUseCase;
-use crate::application::use_cases::use_case::UseCase;
+use crate::adapters::api::auth::controllers::par::ParController;
+use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
+use crate::application::api::controller::ControllerInterface;
 use crate::dto::auth::par::{request::ParRequest};
 
 pub fn auth_router() -> Scope {
@@ -14,17 +14,18 @@ pub fn auth_router() -> Scope {
 #[post("/par")]
 async fn par_handler(
     data: web::Form<ParRequest>,
-    redis_pool: web::Data<deadpool_redis::Pool>,
-    db_pool: web::Data<PostgresDB>,
+    cache: web::Data<deadpool_redis::Pool>,
+    repository: web::Data<OAuthClientRepository>,
 ) -> impl Responder {
-    let case = ParUseCase {
-        redis_pool: redis_pool.into_inner(),
-        db_pool: db_pool.into_inner(),
-    };
+    let result = ParController {
+        cache: cache.into_inner(),
+        repository: repository.into_inner(),
+    }
+        .handle(data.into_inner())
+        .await;
 
-    let result = case.handle(data.into_inner());
 
-    match result.await {
+    match result {
         Ok(result) => HttpResponse::Ok().json(result),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }

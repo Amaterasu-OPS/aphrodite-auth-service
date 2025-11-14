@@ -1,15 +1,12 @@
-use sqlx::types::chrono;
-
-#[derive(sqlx::FromRow)]
-#[derive(Debug)]
+#[derive(sqlx::FromRow, Debug, serde::Serialize)]
 pub struct OauthClient {
-    pub id: uuid::Uuid,
-    pub name: String,
-    pub slug: String,
-    pub secret: String,
-    pub urls: Vec<String>,
+    pub id: Option<uuid::Uuid>,
+    pub name: Option<String>,
+    pub slug: Option<String>,
+    pub secret: Option<String>,
+    pub urls: Option<Vec<String>>,
     pub scopes: Option<Vec<String>>,
-    pub status: i32,
-    pub created_at: chrono::NaiveDateTime,
-    pub updated_at: chrono::NaiveDateTime,
+    pub status: Option<i32>,
+    pub created_at: Option<chrono::NaiveDateTime>,
+    pub updated_at: Option<chrono::NaiveDateTime>,
 }
