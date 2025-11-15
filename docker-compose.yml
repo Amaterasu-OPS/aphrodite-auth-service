@@ -28,7 +28,6 @@ services:
     volumes:
       - ./storage/db:/var/lib/postgresql/data
 
-
   flyway:
     image: flyway/flyway
     container_name: auth-service-migrate

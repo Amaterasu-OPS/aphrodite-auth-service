@@ -1,5 +1,6 @@
 use actix_web::{HttpResponse, Responder, Scope, get, post, web};
 use crate::adapters::api::auth::controllers::par::ParController;
+use crate::adapters::spi::cache::redis::RedisCache;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::application::api::controller::ControllerInterface;
 use crate::dto::auth::par::{request::ParRequest};
@@ -14,7 +15,7 @@ pub fn auth_router() -> Scope {
 #[post("/par")]
 async fn par_handler(
     data: web::Form<ParRequest>,
-    cache: web::Data<deadpool_redis::Pool>,
+    cache: web::Data<RedisCache>,
     repository: web::Data<OAuthClientRepository>,
 ) -> impl Responder {
     let result = ParController {

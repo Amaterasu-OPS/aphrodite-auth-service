@@ -1,5 +1,7 @@
 use std::sync::Arc;
-use serde_json::Value;
+use serde_json::{Map, Value};
+use sqlx::Postgres;
+use sqlx::query_builder::Separated;
 use crate::adapters::spi::db::postgres_db::PostgresDB;
 use crate::application::spi::repository::RepositoryInterface;
 use crate::domain::oauth_client::OauthClient;
@@ -9,6 +11,7 @@ pub struct OAuthClientRepository {
     table: String,
 }
 
+#[allow(unused)]
 impl RepositoryInterface for OAuthClientRepository {
     type DB = PostgresDB;
     type Model = OauthClient;
@@ -73,35 +76,31 @@ impl RepositoryInterface for OAuthClientRepository {
             .await.unwrap()
     }
 
-    async fn edit(&self, id: Self::Id, data: Self::Model, fields: Vec<String>) -> Result<Self::Model, String> {
-        let value = serde_json::to_value(&data).unwrap();
+    async fn edit(
+        &self,
+        id: Self::Id,
+        data: Self::Model,
+        fields: Vec<String>,
+    ) -> Result<Self::Model, String> {
+        let value = serde_json::to_value(&data)
+            .map_err(|_| String::from("Failed to serialize model for update"))?;
 
-        let mut query = sqlx::QueryBuilder::new(format!("UPDATE {} SET ", self.table.clone()));
-        let mut sept = query.separated(",");
-
+        let mut query =
+            sqlx::QueryBuilder::new(format!("UPDATE {} SET ", self.table));
 
         if let Value::Object(obj) = value {
-            for (key, val) in obj {
-                if key == "id" {
-                    continue;
-                }
-
-                if fields.contains(&key) {
-                    sept.push(format!("{} = ", key));
-                    sept.push_bind(val);
-                }
-            }
+            let set_clauses = query.separated(", ");
+            self.add_edit_sets(obj, &fields, set_clauses);
         }
 
         query.push(" WHERE id = ");
         query.push_bind(id);
 
-        match query.build().execute(&self.db.pool).await {
-            Ok(_) => {},
-            Err(_) => {
-                return Err(String::from("Failed to update data"));
-            },
-        };
+        query
+            .build()
+            .execute(&self.db.pool)
+            .await
+            .map_err(|_| String::from("Failed to update data"))?;
 
         self.get(id).await
     }
@@ -129,6 +128,7 @@ impl RepositoryInterface for OAuthClientRepository {
     }
 }
 
+#[allow(unused)]
 impl OAuthClientRepository {
     pub async fn get_by_slug_secret(&self, slug: String, secret: String) -> Result<OauthClient, String> {
         let query = format!("SELECT * FROM {} WHERE slug = $1 and secret = $2", self.table.clone());
@@ -140,6 +140,24 @@ impl OAuthClientRepository {
             .await {
             Ok(e) => Ok(e),
             Err(_) => Err(String::from("Client not found"))
+        }
+    }
+
+    fn add_edit_sets(
+        &self,
+        obj: Map<String, Value>,
+        fields: &[String],
+        mut set_clauses: Separated<Postgres, &str>,
+    ) {
+        for (key, val) in obj {
+            if key == "id" {
+                continue;
+            }
+
+            if fields.contains(&key) {
+                set_clauses.push(format!("{} = ", key));
+                set_clauses.push_bind(val);
+            }
         }
     }
 }

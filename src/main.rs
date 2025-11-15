@@ -3,6 +3,7 @@ mod adapters;
 mod dto;
 mod application;
 mod domain;
+mod utils;
 
 use dotenv::dotenv;
 

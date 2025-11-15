@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use crate::application::spi::db::DBInterface;
 
+#[allow(unused)]
 pub trait RepositoryInterface {
     type DB: DBInterface;
 
