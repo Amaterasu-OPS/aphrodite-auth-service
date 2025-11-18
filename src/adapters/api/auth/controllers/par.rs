@@ -15,6 +15,7 @@ pub struct ParController {
 impl ControllerInterface for ParController {
     type Data = ParRequest;
     type Result = Result<ParResponse, String>;
+
     async fn handle(&self, data: Self::Data) -> Self::Result {
         let case = ParUseCase {
             cache: self.cache.clone(),

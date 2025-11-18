@@ -48,7 +48,7 @@ impl UseCaseInterface for ParUseCase {
             }
         }
 
-        let exp = 30;
+        let exp = 60;
         let request_uri = String::from("urn:ietf:params:oauth:request_uri:") + &uuid::Uuid::new_v4().to_string();
         let response = ParResponse {
             request_uri: request_uri.clone(),
@@ -139,7 +139,6 @@ impl ParUseCase {
             return Err(String::from("Invalid code challenge"));
         }
 
-        // check data.state entropy
         if entropy_total_bits(data.state.clone().as_str()) < 64.0 {
             return Err(String::from("Invalid state entropy"));
         }

@@ -9,11 +9,12 @@ use dotenv::dotenv;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::init();
+    dotenv().ok();
+    env_logger::Builder::from_default_env()
+        .format_timestamp_millis()
+        .init();
     
     println!("Starting server...");
-
-    dotenv().ok();
 
     infra::app::start_app().await
 }
