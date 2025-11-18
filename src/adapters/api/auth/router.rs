@@ -1,8 +1,11 @@
 use actix_web::{HttpResponse, Responder, Scope, get, post, web};
+use crate::adapters::api::auth::controllers::authorize::AuthorizeController;
 use crate::adapters::api::auth::controllers::par::ParController;
 use crate::adapters::spi::cache::redis::RedisCache;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
+use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::application::api::controller::ControllerInterface;
+use crate::dto::auth::authorize::request::AuthorizeRequest;
 use crate::dto::auth::par::{request::ParRequest};
 
 pub fn auth_router() -> Scope {
@@ -25,7 +28,6 @@ async fn par_handler(
         .handle(data.into_inner())
         .await;
 
-
     match result {
         Ok(result) => HttpResponse::Ok().json(result),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
@@ -33,8 +35,22 @@ async fn par_handler(
 }
 
 #[get("/authorize")]
-async fn authorize_handler() -> impl Responder {
-    HttpResponse::Ok().body("auth authorize endpoint")
+async fn authorize_handler(
+    data: web::Query<AuthorizeRequest>,
+    cache: web::Data<RedisCache>,
+    repository: web::Data<OAuthSessionRepository>,
+) -> impl Responder {
+    let result = AuthorizeController{
+        cache: cache.into_inner(),
+        repository: repository.into_inner(),
+    }
+        .handle(data.into_inner())
+        .await;
+
+    match result {
+        Ok(result) => HttpResponse::SeeOther().append_header(("Location", result)).finish(),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
 }
 
 #[post("/token")]

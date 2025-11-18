@@ -33,6 +33,6 @@ services:
     container_name: auth-service-migrate
     volumes:
       - ./migrations:/flyway/sql
-    command: -url=jdbc:postgresql://db:5432/auth-service-db -schemas=public -user=auth-service-user -password=auth-service-pass -connectRetries=60 migrate
+    command: -url=jdbc:postgresql://db:5432/auth-service-db -schemas=public -user=auth-service-user -password=auth-service-pass -connectRetries=60 -outOfOrder=true migrate
     depends_on:
       - db

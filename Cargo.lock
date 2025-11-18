@@ -201,6 +201,7 @@ dependencies = [
  "deadpool-redis",
  "dotenv",
  "env_logger",
+ "log",
  "redis",
  "serde",
  "serde_json",

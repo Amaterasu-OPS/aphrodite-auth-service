@@ -1,22 +1,22 @@
 use std::sync::Arc;
 use crate::adapters::spi::db::postgres_db::PostgresDB;
 use crate::application::spi::repository::RepositoryInterface;
-use crate::domain::oauth_client::OauthClient;
+use crate::domain::oauth_session::OauthSession;
 use crate::for_each_field;
 
-pub struct OAuthClientRepository {
+pub struct OAuthSessionRepository {
     db: Arc<PostgresDB>,
     table: String,
 }
 
 #[allow(unused)]
-impl RepositoryInterface for OAuthClientRepository {
+impl RepositoryInterface for OAuthSessionRepository {
     type DB = PostgresDB;
-    type Model = OauthClient;
+    type Model = OauthSession;
     type Id = uuid::Uuid;
 
     fn new(table_name: String, pool: Arc<Self::DB>) -> Self {
-        OAuthClientRepository {
+        OAuthSessionRepository {
             db: pool,
             table: table_name,
         }
@@ -25,25 +25,31 @@ impl RepositoryInterface for OAuthClientRepository {
     async fn insert(&self, data: Self::Model) -> Result<Self::Model, String> {
         let query = format!(r#"
             INSERT INTO {} (
-                name,
-                slug,
-                urls,
-                scopes
-            ) VALUES ($1, $2, $3, $4) RETURNING id
+                client_id,
+                response_type,
+                scopes,
+                redirect_uri,
+                state,
+                code_challenge,
+                code_challenge_method
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
             "#, self.table.clone());
 
         let insert_result = sqlx::query_scalar::<_, uuid::Uuid>(&query)
-            .bind(data.name)
-            .bind(data.slug)
-            .bind(data.urls)
+            .bind(data.client_id)
+            .bind(data.response_type)
             .bind(data.scopes)
+            .bind(data.redirect_uri)
+            .bind(data.state)
+            .bind(data.code_challenge)
+            .bind(data.code_challenge_method)
             .fetch_one(&self.db.pool)
             .await;
 
         let id = match insert_result {
             Ok(id) => id,
             Err(_) => {
-                return Err(String::from("Failed to insert client"))
+                return Err(String::from("Failed to insert session"))
             }
         };
 
@@ -51,7 +57,10 @@ impl RepositoryInterface for OAuthClientRepository {
             .bind(id)
             .fetch_one(&self.db.pool).await {
             Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Cannot retrieve client"))
+            Err(e) => {
+                println!("{}", e);
+                Err(String::from("Cannot retrieve session"))
+            }
         }
     }
 
@@ -83,11 +92,11 @@ impl RepositoryInterface for OAuthClientRepository {
             .map_err(|_| String::from("Failed to serialize model for update"))?;
 
         let mut query =
-            sqlx::QueryBuilder::new(format!("UPDATE {} SET ", self.table));
+            sqlx::QueryBuilder::new(format!("UPDATE {} SET", self.table));
 
         let mut set_clauses = query.separated(", ");
 
-        for_each_field!(data, { name, urls, scopes, status }, |k: &str, v| {
+        for_each_field!(data, { user_id, authorization_code, status }, |k: &str, v| {
             if fields.contains(&k) {
                 set_clauses.push(format!(" {} = ", k));
                 set_clauses.push_bind_unseparated(v);
@@ -97,11 +106,13 @@ impl RepositoryInterface for OAuthClientRepository {
         query.push(" WHERE id = ");
         query.push_bind(id);
 
-        query
-            .build()
-            .execute(&self.db.pool)
+        println!(">> {}", query.sql());
+
+        let mut sql = query.build();
+
+        sql.execute(&self.db.pool)
             .await
-            .map_err(|_| String::from("Failed to update client"))?;
+            .map_err(|_| String::from("Failed to update session"))?;
 
         self.get(id).await
     }
@@ -114,7 +125,7 @@ impl RepositoryInterface for OAuthClientRepository {
             .fetch_one(&self.db.pool)
             .await {
             Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Client not found"))
+            Err(_) => Err(String::from("Session not found"))
         }
     }
 
@@ -124,23 +135,7 @@ impl RepositoryInterface for OAuthClientRepository {
             .execute(&self.db.pool)
             .await {
             Ok(_) => Ok(id),
-            Err(_) => Err(String::from("Client not found"))
-        }
-    }
-}
-
-#[allow(unused)]
-impl OAuthClientRepository {
-    pub async fn get_by_slug_secret(&self, slug: String, secret: String) -> Result<OauthClient, String> {
-        let query = format!("SELECT * FROM {} WHERE slug = $1 and secret = $2", self.table.clone());
-
-        match sqlx::query_as::<_, OauthClient>(&query)
-            .bind(slug)
-            .bind(secret)
-            .fetch_one(&self.db.pool)
-            .await {
-            Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Client not found"))
+            Err(_) => Err(String::from("Session not found"))
         }
     }
 }
