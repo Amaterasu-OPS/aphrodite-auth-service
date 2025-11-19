@@ -17,11 +17,11 @@ impl UseCaseInterface for AuthorizeUseCase {
     type T = AuthorizeRequest;
     type U = String;
 
-    async fn handle(&self, data: Self::T) -> Result<Self::U, String> {
+    async fn handle(&self, data: Self::T) -> (Result<Self::U, String>, u16) {
         let request = match self.get_request_from_par_uri(&data).await {
             Ok(e) => e,
             Err(e) => {
-                return Err(e)
+                return (Err(e.0), e.1);
             }
         };
 
@@ -44,50 +44,48 @@ impl UseCaseInterface for AuthorizeUseCase {
             updated_at: None,
         }).await {
             Ok(e) => e,
-            Err(e) => {
-                println!("{}", e);
-                return Err("Failed to create OAuth session".to_string())
+            Err(_) => {
+                return (Err("Failed to create OAuth session".to_string()), 500);
             }
         };
 
-        Ok(std::env::var("LOGIN_PAGE_URL").unwrap_or("http://localhost:3001/".to_string()) + "?session_id=" + result.id.unwrap().to_string().as_str())
+        (Ok(std::env::var("LOGIN_PAGE_URL").unwrap_or("http://localhost:3001/".to_string()) + "?session_id=" + result.id.unwrap().to_string().as_str()), 303)
     }
 }
 
 impl AuthorizeUseCase {
-    async fn get_request_from_par_uri(&self, data: &AuthorizeRequest) -> Result<ParRequest, String> {
+    async fn get_request_from_par_uri(&self, data: &AuthorizeRequest) -> Result<ParRequest, (String, u16)> {
         let uri = data.uri.as_ref().unwrap();
         let client_id = data.client_id.as_ref().unwrap();
 
         if !uri.starts_with("urn:ietf:params:oauth:request_uri:") {
-            return Err("Invalid URI".to_string())
+            return Err(("Invalid URI".to_string(), 400))
         }
 
-        let mut conn = match self.cache.pool.get()
-            .await {
+        let mut conn = match self.cache.get_pool().await {
             Ok(conn) => conn,
-            Err(_) => {
-                return Err(String::from("Failed to get connection from pool"));
+            Err(e) => {
+                return Err((e, 500))
             }
         };
 
         let value = match conn.get::<String, String>(uri.clone()).await {
             Ok(value) => value,
             Err(_) => {
-                return Err("URI not found".to_string())
+                return Err(("URI not found".to_string(), 400))
             }
         };
 
         let request = serde_json::from_str::<ParRequest>(&value).unwrap();
 
         if request.client_id != *client_id {
-            return Err("Invalid client id".to_string())
+            return Err(("Invalid client id".to_string(), 400))
         }
 
         match conn.del::<String, String>(uri.clone()).await {
             Ok(_) => {},
             Err(_) => {
-                return Err("Failed to delete URI".to_string())
+                return Err(("Failed to delete URI".to_string(), 500))
             }
         };
 
