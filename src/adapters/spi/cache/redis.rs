@@ -1,4 +1,4 @@
-use deadpool_redis::{Config, Pool};
+use deadpool_redis::{Config, Pool, Connection};
 use crate::application::spi::cache::{CacheFactory, CacheInterface};
 
 #[derive(Clone, Debug)]
@@ -21,6 +21,16 @@ impl CacheInterface for RedisCache {
                 std::env::var("REDIS_PORT").expect("REDIS_PORT environment variable not set"),
                 std::env::var("REDIS_DB").expect("REDIS_DB environment variable not set")
             ),
+        }
+    }
+}
+
+impl RedisCache {
+    pub async fn get_pool(&self) -> Result<Connection, String> {
+        match self.pool.get()
+            .await {
+            Ok(conn) => Ok(conn),
+            Err(_) => Err(String::from("Failed to get connection from pool"))
         }
     }
 }

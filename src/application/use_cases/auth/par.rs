@@ -17,35 +17,27 @@ impl UseCaseInterface for ParUseCase {
     type T = ParRequest;
     type U = ParResponse;
 
-    async fn handle(&self, data: ParRequest) -> Result<ParResponse, String> {
+    async fn handle(&self, data: ParRequest) -> (Result<ParResponse, String>, u16) {
         let arc_data = Arc::new(data);
 
         match self.validate_state(arc_data.clone()) {
             Ok(_) => {}
-            Err(err) => {
-                return Err(err);
-            }
+            Err(err) => return (Err(err), 400)
         }
 
         let client = match self.get_client(Arc::clone(&arc_data)).await {
             Ok(e) => e,
-            Err(err) => {
-                return Err(format!("Error getting client: {}", err));
-            }
+            Err(err) => return (Err(format!("Error getting client: {}", err)), 400)
         };
 
         match self.validate_uris(Arc::clone(&arc_data), &client) {
             Ok(_) => {}
-            Err(err) => {
-                return Err(format!("Error validating redirect URIs: {}", err));
-            }
+            Err(err) => return (Err(format!("Error validating redirect URIs: {}", err)), 400)
         };
 
         match self.validate_scopes(Arc::clone(&arc_data), &client) {
             Ok(_) => {}
-            Err(err) => {
-                return Err(format!("Error validating scopes: {}", err));
-            }
+            Err(err) => return (Err(format!("Error validating scopes: {}", err)), 400)
         }
 
         let exp = 60;
@@ -55,12 +47,9 @@ impl UseCaseInterface for ParUseCase {
             expires_in: exp,
         };
 
-        let mut conn = match self.cache.pool.get()
-            .await {
+        let mut conn = match self.cache.get_pool().await {
             Ok(conn) => conn,
-            Err(_) => {
-                return Err(String::from("Failed to get connection from pool"));
-            }
+            Err(e) => return (Err(e), 500)
         };
 
         let value = serde_json::to_string(&arc_data).unwrap();
@@ -68,12 +57,10 @@ impl UseCaseInterface for ParUseCase {
         match conn.set_ex::<String, String, ()>(request_uri, value, exp)
             .await {
             Ok(_) => {}
-            Err(_) => {
-                return Err(String::from("Failed to set value"));
-            }
+            Err(_) => return (Err(String::from("Failed to set value")), 500)
         };
 
-        Ok(response)
+        (Ok(response), 201)
     }
 }
 

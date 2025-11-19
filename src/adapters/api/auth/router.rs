@@ -21,17 +21,12 @@ async fn par_handler(
     cache: web::Data<RedisCache>,
     repository: web::Data<OAuthClientRepository>,
 ) -> impl Responder {
-    let result = ParController {
+    ParController {
         cache: cache.into_inner(),
         repository: repository.into_inner(),
     }
         .handle(data.into_inner())
-        .await;
-
-    match result {
-        Ok(result) => HttpResponse::Ok().json(result),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    }
+        .await
 }
 
 #[get("/authorize")]
@@ -40,17 +35,12 @@ async fn authorize_handler(
     cache: web::Data<RedisCache>,
     repository: web::Data<OAuthSessionRepository>,
 ) -> impl Responder {
-    let result = AuthorizeController{
+    AuthorizeController{
         cache: cache.into_inner(),
         repository: repository.into_inner(),
     }
         .handle(data.into_inner())
-        .await;
-
-    match result {
-        Ok(result) => HttpResponse::SeeOther().append_header(("Location", result)).finish(),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    }
+        .await
 }
 
 #[post("/token")]
