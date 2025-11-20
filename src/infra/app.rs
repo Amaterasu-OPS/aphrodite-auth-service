@@ -8,6 +8,7 @@ use crate::adapters::spi::db::db::DBAdapter;
 use crate::adapters::spi::db::postgres_db::PostgresDB;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
+use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
 use crate::application::spi::repository::RepositoryInterface;
 
 pub async fn start_app() -> std::io::Result<()> {
@@ -16,6 +17,8 @@ pub async fn start_app() -> std::io::Result<()> {
     
     let oauth_client_repository = web::Data::new(OAuthClientRepository::new(String::from("oauth_client"), psql.clone()));
     let oauth_session_repository = web::Data::new(OAuthSessionRepository::new(String::from("oauth_session"), psql.clone()));
+    let oauth_token_repository = web::Data::new(OAuthTokenRepository::new(String::from("oauth_token"), psql.clone()));
+
     let redis_cache = web::Data::new(redis);
 
     HttpServer::new(move || {
@@ -28,6 +31,7 @@ pub async fn start_app() -> std::io::Result<()> {
         .app_data(redis_cache.clone())
         .app_data(oauth_client_repository.clone())
         .app_data(oauth_session_repository.clone())
+        .app_data(oauth_token_repository.clone())
     })
     .bind(("0.0.0.0", 8000))?
     .run()

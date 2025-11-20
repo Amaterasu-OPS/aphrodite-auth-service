@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use actix_web::http::StatusCode;
 use deadpool_redis::redis::{AsyncCommands};
 use crate::adapters::spi::cache::redis::RedisCache;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
@@ -6,38 +7,36 @@ use crate::application::api::use_case::UseCaseInterface;
 use crate::domain::oauth_client::OauthClient;
 use crate::dto::auth::par::request::ParRequest;
 use crate::dto::auth::par::response::ParResponse;
+use crate::utils::api_response::{ApiError, ApiSuccess};
 use crate::utils::entropy::entropy_total_bits;
 
 pub struct ParUseCase {
-    pub cache: Arc<RedisCache>,
-    pub repository: Arc<OAuthClientRepository>
+    cache: Arc<RedisCache>,
+    repository: Arc<OAuthClientRepository>
 }
 
 impl UseCaseInterface for ParUseCase {
-    type T = ParRequest;
-    type U = ParResponse;
+    type Request = ParRequest;
+    type Response = ParResponse;
 
-    async fn handle(&self, data: ParRequest) -> (Result<ParResponse, String>, u16) {
+    async fn handle(&self, data: ParRequest) -> Result<ApiSuccess<Self::Response>, ApiError> {
         let arc_data = Arc::new(data);
 
-        match self.validate_state(arc_data.clone()) {
-            Ok(_) => {}
-            Err(err) => return (Err(err), 400)
+        if let Err(e) = self.validate_state(arc_data.clone()) {
+            return Err(ApiError::new(e, StatusCode::BAD_REQUEST))
         }
 
         let client = match self.get_client(Arc::clone(&arc_data)).await {
             Ok(e) => e,
-            Err(err) => return (Err(format!("Error getting client: {}", err)), 400)
+            Err(err) => return Err(ApiError::new(format!("Getting client: {}", err), StatusCode::BAD_REQUEST))
         };
 
-        match self.validate_uris(Arc::clone(&arc_data), &client) {
-            Ok(_) => {}
-            Err(err) => return (Err(format!("Error validating redirect URIs: {}", err)), 400)
-        };
+        if let Err(e) = self.validate_uris(Arc::clone(&arc_data), &client) {
+            return Err(ApiError::new(format!("Error validating URIs: {}", e), StatusCode::BAD_REQUEST))
+        }
 
-        match self.validate_scopes(Arc::clone(&arc_data), &client) {
-            Ok(_) => {}
-            Err(err) => return (Err(format!("Error validating scopes: {}", err)), 400)
+        if let Err(e) = self.validate_scopes(Arc::clone(&arc_data), &client) {
+            return Err(ApiError::new(format!("Error validating scopes: {}", e), StatusCode::BAD_REQUEST))
         }
 
         let exp = 60;
@@ -49,22 +48,25 @@ impl UseCaseInterface for ParUseCase {
 
         let mut conn = match self.cache.get_pool().await {
             Ok(conn) => conn,
-            Err(e) => return (Err(e), 500)
+            Err(e) => return Err(ApiError::new(format!("Getting cache connection: {}", e), StatusCode::INTERNAL_SERVER_ERROR))
         };
 
         let value = serde_json::to_string(&arc_data).unwrap();
 
-        match conn.set_ex::<String, String, ()>(request_uri, value, exp)
-            .await {
-            Ok(_) => {}
-            Err(_) => return (Err(String::from("Failed to set value")), 500)
-        };
+        if let Err(_) = conn.set_ex::<String, String, ()>(request_uri, value, exp)
+            .await{
+            return Err(ApiError::new("Failed to store PAR request".to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        }
 
-        (Ok(response), 201)
+        Ok(ApiSuccess::new(response, StatusCode::CREATED))
     }
 }
 
 impl ParUseCase {
+    pub fn new(cache: Arc<RedisCache>, repository: Arc<OAuthClientRepository>) -> Self {
+        Self { cache, repository }
+    }
+
     async fn get_client(&self, data: Arc<ParRequest>) -> Result<OauthClient, String> {
         self.repository.get_by_slug_secret(data.client_id.clone(), data.client_secret.clone()).await
     }
@@ -97,7 +99,6 @@ impl ParUseCase {
         }
 
         let scopes = client.scopes.clone().unwrap();
-
         let requested_scopes = data.scope.split(" ").collect::<Vec<&str>>();
 
         for scope in requested_scopes {

@@ -7,7 +7,6 @@ pub struct OauthSession {
     pub redirect_uri: Option<String>,
     pub state: Option<String>,
     pub response_type: Option<String>,
-    pub authorization_code: Option<String>,
     pub code_challenge: Option<String>,
     pub code_challenge_method: Option<String>,
     pub status: Option<i32>,
