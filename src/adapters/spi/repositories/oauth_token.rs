@@ -1,22 +1,22 @@
 use std::sync::Arc;
 use crate::adapters::spi::db::postgres_db::PostgresDB;
 use crate::application::spi::repository::RepositoryInterface;
-use crate::domain::oauth_session::OauthSession;
+use crate::domain::oauth_token::OauthToken;
 use crate::for_each_field;
 
-pub struct OAuthSessionRepository {
+pub struct OAuthTokenRepository {
     db: Arc<PostgresDB>,
     table: String,
 }
 
 #[allow(unused)]
-impl RepositoryInterface for OAuthSessionRepository {
+impl RepositoryInterface for OAuthTokenRepository {
     type DB = PostgresDB;
-    type Model = OauthSession;
+    type Model = OauthToken;
     type Id = uuid::Uuid;
 
     fn new(table_name: String, pool: Arc<Self::DB>) -> Self {
-        OAuthSessionRepository {
+        OAuthTokenRepository {
             db: pool,
             table: table_name,
         }
@@ -25,31 +25,23 @@ impl RepositoryInterface for OAuthSessionRepository {
     async fn insert(&self, data: Self::Model) -> Result<Self::Model, String> {
         let query = format!(r#"
             INSERT INTO {} (
-                client_id,
-                response_type,
-                scopes,
-                redirect_uri,
-                state,
-                code_challenge,
-                code_challenge_method
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+                session_id,
+                access_token,
+                refresh_token
+            ) VALUES ($1, $2, $3) RETURNING id
             "#, self.table.clone());
 
         let insert_result = sqlx::query_scalar::<_, uuid::Uuid>(&query)
-            .bind(data.client_id)
-            .bind(data.response_type)
-            .bind(data.scopes)
-            .bind(data.redirect_uri)
-            .bind(data.state)
-            .bind(data.code_challenge)
-            .bind(data.code_challenge_method)
+            .bind(data.session_id)
+            .bind(data.access_token)
+            .bind(data.refresh_token)
             .fetch_one(&self.db.pool)
             .await;
 
         let id = match insert_result {
             Ok(id) => id,
             Err(_) => {
-                return Err(String::from("Failed to insert session"))
+                return Err(String::from("Failed to insert token"))
             }
         };
 
@@ -59,7 +51,7 @@ impl RepositoryInterface for OAuthSessionRepository {
             Ok(e) => Ok(e),
             Err(e) => {
                 println!("{}", e);
-                Err(String::from("Cannot retrieve session"))
+                Err(String::from("Cannot retrieve token"))
             }
         }
     }
@@ -96,7 +88,7 @@ impl RepositoryInterface for OAuthSessionRepository {
 
         let mut set_clauses = query.separated(", ");
 
-        for_each_field!(data, { user_id, status, scopes }, |k: &str, v| {
+        for_each_field!(data, { access_token, refresh_token, status }, |k: &str, v| {
             if fields.contains(&k) {
                 set_clauses.push(format!(" {} = ", k));
                 set_clauses.push_bind_unseparated(v);
@@ -110,7 +102,7 @@ impl RepositoryInterface for OAuthSessionRepository {
 
         sql.execute(&self.db.pool)
             .await
-            .map_err(|_| String::from("Failed to update session"))?;
+            .map_err(|_| String::from("Failed to update token"))?;
 
         self.get(id).await
     }
@@ -123,7 +115,7 @@ impl RepositoryInterface for OAuthSessionRepository {
             .fetch_one(&self.db.pool)
             .await {
             Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Session not found"))
+            Err(_) => Err(String::from("Token not found"))
         }
     }
 
@@ -133,7 +125,7 @@ impl RepositoryInterface for OAuthSessionRepository {
             .execute(&self.db.pool)
             .await {
             Ok(_) => Ok(id),
-            Err(_) => Err(String::from("Session not found"))
+            Err(_) => Err(String::from("Token not found"))
         }
     }
 }

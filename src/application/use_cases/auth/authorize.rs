@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use actix_web::http::StatusCode;
 use redis::AsyncCommands;
 use crate::adapters::spi::cache::redis::RedisCache;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
@@ -7,21 +8,22 @@ use crate::application::spi::repository::RepositoryInterface;
 use crate::domain::oauth_session::OauthSession;
 use crate::dto::auth::authorize::request::AuthorizeRequest;
 use crate::dto::auth::par::request::ParRequest;
+use crate::utils::api_response::{ApiError, ApiSuccess};
 
 pub struct AuthorizeUseCase {
-    pub cache: Arc<RedisCache>,
-    pub repository: Arc<OAuthSessionRepository>,
+    cache: Arc<RedisCache>,
+    repository: Arc<OAuthSessionRepository>,
 }
 
 impl UseCaseInterface for AuthorizeUseCase {
-    type T = AuthorizeRequest;
-    type U = String;
+    type Request = AuthorizeRequest;
+    type Response = String;
 
-    async fn handle(&self, data: Self::T) -> (Result<Self::U, String>, u16) {
+    async fn handle(&self, data: Self::Request) -> Result<ApiSuccess<Self::Response>, ApiError> {
         let request = match self.get_request_from_par_uri(&data).await {
             Ok(e) => e,
             Err(e) => {
-                return (Err(e.0), e.1);
+                return Err(ApiError::new(e.0, e.1));
             }
         };
 
@@ -40,54 +42,55 @@ impl UseCaseInterface for AuthorizeUseCase {
             redirect_uri: Some(request.redirect_uri),
             scopes: Some(requested_scopes),
             user_id: None,
-            authorization_code: None,
             updated_at: None,
         }).await {
             Ok(e) => e,
             Err(_) => {
-                return (Err("Failed to create OAuth session".to_string()), 500);
+                return Err(ApiError::new("Failed to create OAuth session".to_string(), StatusCode::INTERNAL_SERVER_ERROR));
             }
         };
 
-        (Ok(std::env::var("LOGIN_PAGE_URL").unwrap_or("http://localhost:3001/".to_string()) + "?session_id=" + result.id.unwrap().to_string().as_str()), 303)
+        let url = std::env::var("LOGIN_PAGE_URL").unwrap_or("http://localhost:3001/".to_string()) + "?session_id=" + result.id.unwrap().to_string().as_str();
+        Ok(ApiSuccess::new(url, StatusCode::SEE_OTHER))
     }
 }
 
 impl AuthorizeUseCase {
-    async fn get_request_from_par_uri(&self, data: &AuthorizeRequest) -> Result<ParRequest, (String, u16)> {
+    pub fn new(cache: Arc<RedisCache>, repository: Arc<OAuthSessionRepository>) -> Self {
+        Self { cache, repository }
+    }
+
+    async fn get_request_from_par_uri(&self, data: &AuthorizeRequest) -> Result<ParRequest, (String, StatusCode)> {
         let uri = data.uri.as_ref().unwrap();
         let client_id = data.client_id.as_ref().unwrap();
 
         if !uri.starts_with("urn:ietf:params:oauth:request_uri:") {
-            return Err(("Invalid URI".to_string(), 400))
+            return Err(("Invalid URI".to_string(), StatusCode::BAD_REQUEST))
         }
 
         let mut conn = match self.cache.get_pool().await {
             Ok(conn) => conn,
             Err(e) => {
-                return Err((e, 500))
+                return Err((e, StatusCode::INTERNAL_SERVER_ERROR))
             }
         };
 
         let value = match conn.get::<String, String>(uri.clone()).await {
             Ok(value) => value,
             Err(_) => {
-                return Err(("URI not found".to_string(), 400))
+                return Err(("URI not found".to_string(), StatusCode::BAD_REQUEST))
             }
         };
 
         let request = serde_json::from_str::<ParRequest>(&value).unwrap();
 
         if request.client_id != *client_id {
-            return Err(("Invalid client id".to_string(), 400))
+            return Err(("Invalid client id".to_string(), StatusCode::BAD_REQUEST))
         }
 
-        match conn.del::<String, String>(uri.clone()).await {
-            Ok(_) => {},
-            Err(_) => {
-                return Err(("Failed to delete URI".to_string(), 500))
-            }
-        };
+        if let Err(_) = conn.del::<String, String>(uri.clone()).await {
+            return Err(("Failed to delete URI".to_string(), StatusCode::BAD_REQUEST))
+        }
 
         Ok(request)
     }

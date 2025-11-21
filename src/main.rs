@@ -14,7 +14,7 @@ async fn main() -> std::io::Result<()> {
         .format_timestamp_millis()
         .init();
     
-    println!("Starting server...");
+    println!("Starting server..");
 
     infra::app::start_app().await
 }

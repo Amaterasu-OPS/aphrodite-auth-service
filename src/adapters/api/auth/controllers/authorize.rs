@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use actix_web::http::StatusCode;
 use actix_web::HttpResponse;
 use crate::adapters::spi::cache::redis::RedisCache;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
@@ -7,11 +8,11 @@ use crate::application::api::use_case::UseCaseInterface;
 use crate::application::use_cases::auth::authorize::AuthorizeUseCase;
 use crate::application::use_cases::auth::authorize_continue::AuthorizeContinueUseCase;
 use crate::dto::auth::authorize::request::AuthorizeRequest;
-use crate::utils::api_error::ApiError;
+use crate::utils::api_response::{ApiError, ApiErrorResponse, ApiSuccess};
 
 pub struct AuthorizeController {
-    pub cache: Arc<RedisCache>,
-    pub repository: Arc<OAuthSessionRepository>,
+    cache: Arc<RedisCache>,
+    repository: Arc<OAuthSessionRepository>,
 }
 
 impl ControllerInterface for AuthorizeController {
@@ -20,30 +21,35 @@ impl ControllerInterface for AuthorizeController {
 
     async fn handle(&self, data: Self::Data) -> Self::Result {
         if !data.auth_token.is_none()  {
-            let case = AuthorizeContinueUseCase {
-                cache: self.cache.clone(),
-                repository: self.repository.clone(),
-            };
-
-            return self.format_result(case.handle(data).await)
+            return self.format_result(AuthorizeContinueUseCase::new(
+                self.cache.clone(),
+                self.repository.clone(),
+            ).handle(data).await);
         }
 
-        let case = AuthorizeUseCase {
-            cache: self.cache.clone(),
-            repository: self.repository.clone()
-        };
-
-        self.format_result(case.handle(data).await)
+        self.format_result(AuthorizeUseCase::new(
+            self.cache.clone(),
+            self.repository.clone()
+        ).handle(data).await)
     }
 }
 
 impl AuthorizeController {
-    fn format_result(&self, result: (Result<String, String>, u16)) -> HttpResponse {
-        match result.1 {
-            303 => HttpResponse::SeeOther().append_header(("Location", result.0.unwrap())).finish(),
-            _ => HttpResponse::build(
-                actix_web::http::StatusCode::from_u16(result.1).unwrap()
-            ).json(ApiError::new(result.0.err().unwrap()))
+    pub fn new(
+        cache: Arc<RedisCache>,
+        repository: Arc<OAuthSessionRepository>,
+    ) -> Self {
+        Self {
+            cache,
+            repository,
+        }
+    }
+    fn format_result(&self, result: Result<ApiSuccess<String>, ApiError>) -> HttpResponse {
+        match result {
+            Ok(e) => HttpResponse::SeeOther().append_header(("Location", e.data)).finish(),
+            Err(e) => HttpResponse::build(
+                StatusCode::from_u16(e.status_code).unwrap()
+            ).json(ApiErrorResponse::new(e.error))
         }
     }
 }

@@ -1,5 +1,7 @@
+use crate::utils::api_response::{ApiError, ApiSuccess};
+
 pub trait UseCaseInterface {
-    type T;
-    type U;
-    async fn handle(&self, data: Self::T) -> (Result<Self::U, String>, u16);
+    type Request;
+    type Response;
+    async fn handle(&self, data: Self::Request) -> Result<ApiSuccess<Self::Response>, ApiError>;
 }

@@ -1,0 +1,171 @@
+use std::env;
+use std::sync::Arc;
+use actix_web::http::StatusCode;
+use chrono::DateTime;
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use redis::AsyncCommands;
+use crate::adapters::spi::cache::redis::RedisCache;
+use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
+use crate::application::api::use_case::UseCaseInterface;
+use crate::application::spi::repository::RepositoryInterface;
+use crate::dto::auth::authorize::token_data::TokenData;
+use crate::dto::auth::token::access_token::AccessToken;
+use crate::dto::auth::token::request::TokenRequest;
+use crate::dto::auth::token::response::TokenResponse;
+use crate::utils::api_response::{ApiError, ApiSuccess};
+use crate::utils::hasher::{hash_sha256, hash_sha512};
+use rand::{rng, RngCore};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
+use crate::domain::oauth_token::OauthToken;
+
+pub struct TokenAuthorizationCodeUseCase {
+    cache: Arc<RedisCache>,
+    repository: Arc<OAuthSessionRepository>,
+    token_repository: Arc<OAuthTokenRepository>
+}
+
+impl UseCaseInterface for TokenAuthorizationCodeUseCase {
+    type Request = TokenRequest;
+    type Response = TokenResponse;
+
+    async fn handle(&self, data: Self::Request) -> Result<ApiSuccess<Self::Response>, ApiError> {
+        let arc_data = Arc::new(data);
+
+        if let Err(e) = self.validate_request(arc_data.clone()) {
+            return Err(e);
+        }
+
+        let (jwt_iss, encoding_key) = match self.validate_envs() {
+            Ok(e) => e,
+            Err(e) => return Err(e)
+        };
+
+        let Ok(mut conn) = self.cache.get_pool().await else {
+            return Err(ApiError::new(String::from("Getting cache connection"), StatusCode::INTERNAL_SERVER_ERROR))
+        };
+
+        let Ok(value) = conn.get::<String, String>(arc_data.code.clone()).await else  {
+            return Err(ApiError::new(String::from("Invalid authorization code"), StatusCode::BAD_REQUEST));
+        };
+
+        let Ok(session) = serde_json::from_str::<TokenData>(&value) else {
+            return Err(ApiError::new(String::from("Failed to parse session data"), StatusCode::INTERNAL_SERVER_ERROR));
+        };
+
+        let Ok(repo_session) = self.repository.get(session.session_id).await else {
+            return Err(ApiError::new(String::from("Session not found"), StatusCode::BAD_REQUEST));
+        };
+
+        let Ok(access_token) = self.generate_access_token(
+            repo_session.scopes.unwrap_or(vec![]),
+            chrono::Utc::now(),
+            jwt_iss,
+            session.session_id.to_string(),
+            session.user_id.clone(),
+            repo_session.client_id.unwrap().to_string(),
+            encoding_key
+        ) else {
+            return Err(ApiError::new(String::from("Failed to generate access token"), StatusCode::INTERNAL_SERVER_ERROR));
+        };
+
+        let refresh_token = TokenAuthorizationCodeUseCase::generate_refresh_token();
+
+        if let Err(_) = conn.del::<String, String>(arc_data.code.clone()).await {
+            return Err(ApiError::new(String::from("Failed to delete code"), StatusCode::INTERNAL_SERVER_ERROR))
+        }
+
+        if let Err(_) = self.token_repository.insert(OauthToken {
+            id: None,
+            session_id: Some(session.session_id.clone()),
+            access_token: Some(hash_sha256(access_token.clone().as_str())),
+            refresh_token: Some(hash_sha256(refresh_token.clone().as_str())),
+            status: None,
+            created_at: None,
+            updated_at: None,
+        }).await {
+            return Err(ApiError::new(String::from("Failed to create token"), StatusCode::INTERNAL_SERVER_ERROR))
+        }
+
+        Ok(ApiSuccess::new(
+            TokenResponse {
+                access_token,
+                refresh_token,
+            },
+            StatusCode::OK
+        ))
+    }
+}
+
+impl TokenAuthorizationCodeUseCase {
+    pub fn new(cache: Arc<RedisCache>, repository: Arc<OAuthSessionRepository>, token_repository: Arc<OAuthTokenRepository>) -> Self {
+        Self { cache, repository, token_repository  }
+    }
+
+    fn validate_request(&self, data: Arc<TokenRequest>) -> Result<(), ApiError> {
+        if data.grant_type != "authorization_code" {
+            return Err(ApiError::new(String::from("Invalid grant type"), StatusCode::BAD_REQUEST));
+        }
+
+        Ok(())
+    }
+
+    fn validate_envs(&self) -> Result<(String, EncodingKey), ApiError> {
+        let Ok(jwt_iss) = env::var("JWT_ISSUER") else {
+            return Err(ApiError::new(String::from("JWT_ISSUER not found"), StatusCode::INTERNAL_SERVER_ERROR));
+        };
+
+        let Ok(jwt_pk) = env::var("JWT_PRIVATE_KEY") else {
+            return Err(ApiError::new(String::from("JWT_PRIVATE_KEY not found"), StatusCode::INTERNAL_SERVER_ERROR));
+        };
+
+        let Ok(encoding_key) = EncodingKey::from_rsa_pem(jwt_pk.replace("\\n", "\n").as_bytes()) else {
+            return Err(ApiError::new(String::from("Failed to parse JWT_PRIVATE_KEY"), StatusCode::INTERNAL_SERVER_ERROR));
+        };
+
+        Ok((jwt_iss, encoding_key))
+    }
+
+    fn generate_access_token(
+        &self,
+        scopes: Vec<String>,
+        now: DateTime<chrono::Utc>,
+        jwt_iss: String,
+        session_id: String,
+        user_id: uuid::Uuid,
+        client_id: String,
+        encoding_key: EncodingKey
+    ) -> Result<String, String> {
+        let id = hash_sha512(uuid::Uuid::new_v4().to_string().as_str());
+        let exp = now.timestamp() + 4 * 60 * 60;
+
+        let token = AccessToken {
+            scopes,
+            sub: user_id.clone(),
+            exp: exp.clone() as usize,
+            iat: now.timestamp() as usize,
+            iss: jwt_iss,
+            aud: "".to_string(),
+            jti: id.clone(),
+            sid: session_id,
+            client_id,
+            auth_time: now.timestamp() as usize,
+        };
+
+        let Ok(result) = encode(
+            &Header::new(Algorithm::RS256),
+            &token,
+            &encoding_key
+        ) else {
+            return Err(String::from("Failed to encode JWT"));
+        };
+
+        Ok(result)
+    }
+
+    fn generate_refresh_token() -> String {
+        let mut buf = [0u8; 64];
+        rng().fill_bytes(&mut buf);
+        URL_SAFE_NO_PAD.encode(&buf)
+    }
+}
