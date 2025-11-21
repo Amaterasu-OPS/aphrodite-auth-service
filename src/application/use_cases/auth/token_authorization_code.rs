@@ -16,6 +16,7 @@ use crate::utils::api_response::{ApiError, ApiSuccess};
 use crate::utils::hasher::{hash_sha256, hash_sha512};
 use rand::{rng, RngCore};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use sha2::{Digest, Sha256};
 use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
 use crate::domain::oauth_token::OauthToken;
 
@@ -56,6 +57,12 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
         let Ok(repo_session) = self.repository.get(session.session_id).await else {
             return Err(ApiError::new(String::from("Session not found"), StatusCode::BAD_REQUEST));
         };
+
+        let s256_code_challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(arc_data.code_verifier.clone().as_bytes()));
+        
+        if s256_code_challenge != repo_session.code_challenge.unwrap_or(String::new()) {
+            return Err(ApiError::new(String::from("Invalid code challenge"), StatusCode::BAD_REQUEST));
+        }
 
         let Ok(access_token) = self.generate_access_token(
             repo_session.scopes.unwrap_or(vec![]),

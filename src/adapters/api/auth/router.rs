@@ -44,7 +44,7 @@ async fn authorize_handler(
 
 #[post("/token")]
 async fn token_handler(
-    data: web::Query<TokenRequest>,
+    data: web::Form<TokenRequest>,
     cache: web::Data<RedisCache>,
     repository: web::Data<OAuthSessionRepository>,
     token_repository: web::Data<OAuthTokenRepository>,

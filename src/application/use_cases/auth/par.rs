@@ -26,6 +26,10 @@ impl UseCaseInterface for ParUseCase {
             return Err(ApiError::new(e, StatusCode::BAD_REQUEST))
         }
 
+        if let Err(e) = self.validate_pkce(arc_data.clone()) {
+            return Err(ApiError::new(e, StatusCode::BAD_REQUEST))
+        }
+
         let client = match self.get_client(Arc::clone(&arc_data)).await {
             Ok(e) => e,
             Err(err) => return Err(ApiError::new(format!("Getting client: {}", err), StatusCode::BAD_REQUEST))
@@ -111,6 +115,18 @@ impl ParUseCase {
     }
 
     fn validate_state(&self, data: Arc<ParRequest>) -> Result<(), String> {
+        if data.state.is_empty() {
+            return Err(String::from("Invalid state"));
+        }
+
+        if entropy_total_bits(data.state.clone().as_str()) < 64.0 {
+            return Err(String::from("Invalid state entropy"));
+        }
+
+        Ok(())
+    }
+
+    fn validate_pkce(&self, data: Arc<ParRequest>) -> Result<(), String> {
         if data.response_type != "code" {
             return Err(String::from("Invalid response type"));
         }
@@ -119,16 +135,12 @@ impl ParUseCase {
             return Err(String::from("Invalid code challenge method"));
         }
 
-        if data.state.is_empty() {
-            return Err(String::from("Invalid state"));
-        }
-
         if data.code_challenge.is_empty() {
             return Err(String::from("Invalid code challenge"));
         }
 
-        if entropy_total_bits(data.state.clone().as_str()) < 64.0 {
-            return Err(String::from("Invalid state entropy"));
+        if entropy_total_bits(data.code_challenge.clone().as_str()) < 64.0 {
+            return Err(String::from("Invalid code challenge entropy"));
         }
 
         Ok(())

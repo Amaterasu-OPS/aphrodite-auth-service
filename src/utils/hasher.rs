@@ -1,4 +1,4 @@
-use sha2::{Digest, Sha512};
+use sha2::{Digest, Sha256, Sha512};
 
 pub fn hash_sha512(input: &str) -> String {
     let mut hasher = Sha512::new();
@@ -10,7 +10,7 @@ pub fn hash_sha512(input: &str) -> String {
 
 #[allow(dead_code)]
 pub fn hash_sha256(input: &str) -> String {
-    let mut hasher = Sha512::new();
+    let mut hasher = Sha256::new();
     hasher.update(input);
 
     let digest = hasher.finalize();
