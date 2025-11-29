@@ -9,7 +9,7 @@ use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
 use crate::application::api::controller::ControllerInterface;
 use crate::dto::auth::authorize::request::AuthorizeRequest;
 use crate::dto::auth::par::{request::ParRequest};
-use crate::dto::auth::token::request::TokenRequest;
+use crate::dto::auth::token::request::{TokenRefreshRequest, TokenRequest};
 
 pub fn auth_router() -> Scope {
     web::scope("/auth")
@@ -44,14 +44,16 @@ async fn authorize_handler(
 
 #[post("/token")]
 async fn token_handler(
-    data: web::Form<TokenRequest>,
+    data: web::Either<web::Form<TokenRequest>, web::Form<TokenRefreshRequest>>,
     cache: web::Data<RedisCache>,
     repository: web::Data<OAuthSessionRepository>,
     token_repository: web::Data<OAuthTokenRepository>,
+    client_repository: web::Data<OAuthClientRepository>,
 ) -> impl Responder {
     TokenController::new(
         cache.into_inner(),
         repository.into_inner(),
         token_repository.into_inner(),
-    ).handle(data.into_inner()).await
+        client_repository.into_inner(),
+    ).handle(data).await
 }

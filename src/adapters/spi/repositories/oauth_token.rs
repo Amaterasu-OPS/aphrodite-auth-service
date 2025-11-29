@@ -129,3 +129,18 @@ impl RepositoryInterface for OAuthTokenRepository {
         }
     }
 }
+
+impl OAuthTokenRepository {
+    pub(crate) async fn get_by_refresh_token(&self, rf: String) -> Result<OauthToken, String> {
+        let query = format!("SELECT * FROM {} WHERE refresh_token = $1", self.table.clone());
+
+        match sqlx::query_as::<_, OauthToken>(&query)
+            .bind(rf)
+            .fetch_one(&self.db.pool)
+            .await {
+            Ok(e) => Ok(e),
+            Err(_) => Err(String::from("Token not found"))
+        }
+    }
+
+}

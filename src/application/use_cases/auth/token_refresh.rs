@@ -2,34 +2,28 @@ use std::env;
 use std::sync::Arc;
 use actix_web::http::StatusCode;
 use jsonwebtoken::EncodingKey;
-use redis::AsyncCommands;
-use crate::adapters::spi::cache::redis::RedisCache;
+use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::application::api::use_case::UseCaseInterface;
 use crate::application::spi::repository::RepositoryInterface;
-use crate::dto::auth::authorize::token_data::TokenData;
-use crate::dto::auth::token::request::TokenRequest;
+use crate::dto::auth::token::request::TokenRefreshRequest;
 use crate::dto::auth::token::response::TokenResponse;
 use crate::utils::api_response::{ApiError, ApiSuccess};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use sha2::{Digest, Sha256};
-use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
+use crate::utils::hasher::hash_sha256;
 use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
 use crate::domain::oauth_client::OauthClient;
 use crate::domain::oauth_session::OauthSession;
 use crate::domain::oauth_token::OauthToken;
-use crate::utils::hasher::hash_sha256;
 use crate::utils::token::{generate_access_token, generate_refresh_token};
 
-pub struct TokenAuthorizationCodeUseCase {
-    cache: Arc<RedisCache>,
+pub struct TokenRefreshUseCase {
     repository: Arc<OAuthSessionRepository>,
     token_repository: Arc<OAuthTokenRepository>,
     client_repository: Arc<OAuthClientRepository>
 }
 
-impl UseCaseInterface for TokenAuthorizationCodeUseCase {
-    type Request = TokenRequest;
+impl UseCaseInterface for TokenRefreshUseCase {
+    type Request = TokenRefreshRequest;
     type Response = TokenResponse;
 
     async fn handle(&self, data: Self::Request) -> Result<ApiSuccess<Self::Response>, ApiError> {
@@ -44,26 +38,18 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
             Err(e) => return Err(e)
         };
 
-        let Ok(mut conn) = self.cache.get_pool().await else {
-            return Err(ApiError::new(String::from("Getting cache connection"), StatusCode::INTERNAL_SERVER_ERROR))
+        let Ok(token) = self.token_repository.get_by_refresh_token(hash_sha256(arc_data.refresh_token.clone().as_str())).await else {
+            return Err(ApiError::new(String::from("Invalid refresh token"), StatusCode::BAD_REQUEST));
         };
 
-        let Ok(value) = conn.get::<String, String>(arc_data.code.clone()).await else  {
-            return Err(ApiError::new(String::from("Invalid authorization code"), StatusCode::BAD_REQUEST));
-        };
-
-        let Ok(session) = serde_json::from_str::<TokenData>(&value) else {
-            return Err(ApiError::new(String::from("Failed to parse session data"), StatusCode::INTERNAL_SERVER_ERROR));
-        };
-
-        let Ok(repo_session) = self.repository.get(session.session_id).await else {
+        let Ok(repo_session) = self.repository.get(token.session_id.unwrap()).await else {
             return Err(ApiError::new(String::from("Session not found"), StatusCode::BAD_REQUEST));
         };
-
-        let s256_code_challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(arc_data.code_verifier.clone().as_bytes()));
         
-        if s256_code_challenge != repo_session.code_challenge.clone().unwrap_or(String::new()) {
-            return Err(ApiError::new(String::from("Invalid code challenge"), StatusCode::BAD_REQUEST));
+        let scopes = repo_session.scopes.clone().unwrap_or(vec![]);
+
+        if !scopes.contains(&"offline_access".to_string()) {
+            return Err(ApiError::new(String::from("offline_access is required for refresh token"), StatusCode::BAD_REQUEST));
         }
 
         let Ok(repo_client) = self.client_repository.get_by_slug(repo_session.client_id.clone().unwrap()).await else {
@@ -75,11 +61,11 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
         }
 
         let Ok(access_token) = generate_access_token(
-            repo_session.scopes.unwrap_or(vec![]),
+            scopes,
             chrono::Utc::now(),
             jwt_iss,
-            session.session_id.to_string(),
-            session.user_id.clone(),
+            repo_session.id.unwrap().to_string(),
+            repo_session.user_id.unwrap().clone(),
             repo_session.client_id.unwrap().to_string(),
             encoding_key
         ) else {
@@ -88,20 +74,16 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
 
         let refresh_token = generate_refresh_token();
 
-        if let Err(_) = conn.del::<String, String>(arc_data.code.clone()).await {
-            return Err(ApiError::new(String::from("Failed to delete code"), StatusCode::INTERNAL_SERVER_ERROR))
-        }
-
-        if let Err(_) = self.token_repository.insert(OauthToken {
+        if let Err(_) = self.token_repository.edit(token.id.unwrap(), OauthToken {
             id: None,
-            session_id: Some(session.session_id.clone()),
+            session_id: None,
             access_token: Some(hash_sha256(access_token.clone().as_str())),
             refresh_token: Some(hash_sha256(refresh_token.clone().as_str())),
             status: None,
             created_at: None,
             updated_at: None,
-        }).await {
-            return Err(ApiError::new(String::from("Failed to create token"), StatusCode::INTERNAL_SERVER_ERROR))
+        }, vec!["access_token", "refresh_token"]).await {
+            return Err(ApiError::new(String::from("Failed to save token"), StatusCode::INTERNAL_SERVER_ERROR))
         }
 
         Ok(ApiSuccess::new(
@@ -114,25 +96,24 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
     }
 }
 
-impl TokenAuthorizationCodeUseCase {
+impl TokenRefreshUseCase {
     pub fn new(
-        cache: Arc<RedisCache>,
         repository: Arc<OAuthSessionRepository>,
         token_repository: Arc<OAuthTokenRepository>,
         client_repository: Arc<OAuthClientRepository>
     ) -> Self {
-        Self { cache, repository, token_repository, client_repository  }
+        Self { repository, token_repository, client_repository  }
     }
 
-    fn validate_request(&self, data: Arc<TokenRequest>) -> Result<(), ApiError> {
-        if data.grant_type != "authorization_code" {
+    fn validate_request(&self, data: Arc<TokenRefreshRequest>) -> Result<(), ApiError> {
+        if data.grant_type != "refresh_token" {
             return Err(ApiError::new(String::from("Invalid grant type"), StatusCode::BAD_REQUEST));
         }
 
         Ok(())
     }
 
-    fn validate_client(&self, data: Arc<TokenRequest>, session: OauthSession, client: OauthClient) -> Result<(), ApiError> {
+    fn validate_client(&self, data: Arc<TokenRefreshRequest>, session: OauthSession, client: OauthClient) -> Result<(), ApiError> {
         if session.client_id.unwrap() != data.client_id {
             return Err(ApiError::new(String::from("Invalid client"), StatusCode::BAD_REQUEST));
         };
@@ -143,7 +124,6 @@ impl TokenAuthorizationCodeUseCase {
 
         Ok(())
     }
-
 
     fn validate_envs(&self) -> Result<(String, EncodingKey), ApiError> {
         let Ok(jwt_iss) = env::var("JWT_ISSUER") else {
