@@ -1,3 +1,4 @@
 pub mod db;
 pub mod repositories;
 pub mod cache;
+pub mod gateways;

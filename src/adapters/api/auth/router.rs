@@ -3,6 +3,7 @@ use crate::adapters::api::auth::controllers::authorize::AuthorizeController;
 use crate::adapters::api::auth::controllers::par::ParController;
 use crate::adapters::api::auth::controllers::token::TokenController;
 use crate::adapters::spi::cache::redis::RedisCache;
+use crate::adapters::spi::gateways::idp::IdpGateway;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
@@ -49,11 +50,13 @@ async fn token_handler(
     repository: web::Data<OAuthSessionRepository>,
     token_repository: web::Data<OAuthTokenRepository>,
     client_repository: web::Data<OAuthClientRepository>,
+    idp_gateway: web::Data<IdpGateway>,
 ) -> impl Responder {
     TokenController::new(
         cache.into_inner(),
         repository.into_inner(),
         token_repository.into_inner(),
         client_repository.into_inner(),
+        idp_gateway.into_inner(),
     ).handle(data).await
 }

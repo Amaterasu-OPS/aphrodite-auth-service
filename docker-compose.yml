@@ -1,5 +1,5 @@
 services:
-  api:
+  api-auth:
     build:
       context: .
       dockerfile: ./docker/dev/Dockerfile
@@ -7,16 +7,23 @@ services:
     command: cargo watch -x run
     ports:
       - "8000:8000"
+    depends_on:
+      - db-auth
+      - redis-auth
     volumes:
       - ./:/app
+    networks:
+      - auth-service-network
 
-  redis:
+  redis-auth:
     image: "redis:7.0-alpine"
     container_name: auth-service-redis
     ports:
       - "6379:6379"
+    networks:
+      - auth-service-network
 
-  db:
+  db-auth:
     image: postgres:16
     container_name: auth-service-db
     ports:
@@ -27,12 +34,20 @@ services:
       POSTGRES_DB: auth-service-db
     volumes:
       - ./storage/db:/var/lib/postgresql/data
+    networks:
+      - auth-service-network
 
-  flyway:
+  flyway-auth:
     image: flyway/flyway
     container_name: auth-service-migrate
     volumes:
       - ./migrations:/flyway/sql
-    command: -url=jdbc:postgresql://db:5432/auth-service-db -schemas=public -user=auth-service-user -password=auth-service-pass -connectRetries=60 -outOfOrder=true migrate
+    command: -url=jdbc:postgresql://db-auth:5432/auth-service-db -schemas=public -user=auth-service-user -password=auth-service-pass -connectRetries=60 -outOfOrder=true migrate
     depends_on:
-      - db
+      - db-auth
+    networks:
+      - auth-service-network
+
+networks:
+  auth-service-network:
+    name: auth-service-network

@@ -1,6 +1,6 @@
 use actix_web::http::StatusCode;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ApiError {
     pub error: String,
     pub status_code: u16

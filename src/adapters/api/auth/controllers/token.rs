@@ -2,6 +2,7 @@ use std::sync::Arc;
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse};
 use crate::adapters::spi::cache::redis::RedisCache;
+use crate::adapters::spi::gateways::idp::IdpGateway;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
@@ -16,7 +17,8 @@ pub struct TokenController {
     cache: Arc<RedisCache>,
     repository: Arc<OAuthSessionRepository>,
     token_repository: Arc<OAuthTokenRepository>,
-    client_repository: Arc<OAuthClientRepository>
+    client_repository: Arc<OAuthClientRepository>,
+    idp_gateway: Arc<IdpGateway>
 }
 
 impl ControllerInterface for TokenController {
@@ -31,6 +33,7 @@ impl ControllerInterface for TokenController {
                     self.repository.clone(),
                     self.token_repository.clone(),
                     self.client_repository.clone(),
+                    self.idp_gateway.clone(),
                 ).handle(e.into_inner()).await {
                     Ok(e) => HttpResponse::Ok().json(e.data),
                     Err(e) => HttpResponse::build(StatusCode::from_u16(e.status_code).unwrap()).json(ApiErrorResponse::new(e.error)),
@@ -41,6 +44,7 @@ impl ControllerInterface for TokenController {
                     self.repository.clone(),
                     self.token_repository.clone(),
                     self.client_repository.clone(),
+                    self.idp_gateway.clone(),
                 ).handle(e.into_inner()).await {
                     Ok(e) => HttpResponse::Ok().json(e.data),
                     Err(e) => HttpResponse::build(StatusCode::from_u16(e.status_code).unwrap()).json(ApiErrorResponse::new(e.error)),
@@ -55,8 +59,9 @@ impl TokenController {
         cache: Arc<RedisCache>,
         repository: Arc<OAuthSessionRepository>,
         token_repository: Arc<OAuthTokenRepository>,
-        client_repository: Arc<OAuthClientRepository>
+        client_repository: Arc<OAuthClientRepository>,
+        idp_gateway: Arc<IdpGateway>
     ) -> Self {
-        Self { cache, repository, token_repository, client_repository  }
+        Self { cache, repository, token_repository, client_repository, idp_gateway  }
     }
 }
