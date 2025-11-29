@@ -1,5 +1,5 @@
 <samp><h6 align="center">#backend, #project, #authentication</h6></samp>
-# <samp align="center"><h2 align="center">Afrodite Auth service</h2></samp>
+# <samp align="center"><h2 align="center">Aphrodite Auth service</h2></samp>
 
 <p align="center">
   <img src="https://img.shields.io/badge/rust-22272E?&style=for-the-badge&logo=rust&logoColor=fafafa">
@@ -10,11 +10,11 @@
 </p>
 <br/>
 
-Afrodite is an OAuth 2.1 authentication service implementing OIDC and PKCE for secure authorization flows.
+Aphrodite is an OAuth 2.1 authentication service implementing OIDC and PKCE for secure authorization flows.
 It receives PAR requests, manages user authentication, and enforces MFA and session security.
 PKCE binds the authorization code to a client-generated verifier for public-client safety. 
 
-Afrodite issues signed OIDC ID Tokens containing user identity claims.
+Aphrodite issues signed OIDC ID Tokens containing user identity claims.
 It provides Access Tokens and Refresh Tokens for protected API access and session continuity.
 
 ## Run

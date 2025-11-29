@@ -8,11 +8,11 @@ RUN cargo build --release
 
 FROM debian:13-slim AS prod
 
-ARG USER=afrodite-auth-service
+ARG USER=aphrodite-auth-service
 
 WORKDIR /home/app
 
-COPY --from=builder /app/target/release/afrodite-auth-service /usr/local/bin/afrodite-auth-service
+COPY --from=builder /app/target/release/aphrodite-auth-service /usr/local/bin/aphrodite-auth-service
 
 RUN adduser \
     --disabled-password \
@@ -27,4 +27,4 @@ RUN adduser \
 
 USER $USER
 
-CMD ["/usr/local/bin/afrodite-auth-service"]
+CMD ["/usr/local/bin/aphrodite-auth-service"]
