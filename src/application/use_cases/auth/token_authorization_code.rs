@@ -13,8 +13,10 @@ use crate::dto::auth::token::response::TokenResponse;
 use crate::utils::api_response::{ApiError, ApiSuccess};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sha2::{Digest, Sha256};
+use crate::adapters::spi::gateways::idp::IdpGateway;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
+use crate::domain::idp_id_token::IdPIdTokenPayload;
 use crate::domain::oauth_client::OauthClient;
 use crate::domain::oauth_session::OauthSession;
 use crate::domain::oauth_token::OauthToken;
@@ -25,7 +27,8 @@ pub struct TokenAuthorizationCodeUseCase {
     cache: Arc<RedisCache>,
     repository: Arc<OAuthSessionRepository>,
     token_repository: Arc<OAuthTokenRepository>,
-    client_repository: Arc<OAuthClientRepository>
+    client_repository: Arc<OAuthClientRepository>,
+    idp_gateway: Arc<IdpGateway>
 }
 
 impl UseCaseInterface for TokenAuthorizationCodeUseCase {
@@ -74,6 +77,15 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
             return Err(e);
         }
 
+        let id_token = match self.idp_gateway.get_id_token_v1(IdPIdTokenPayload {
+            user_id: session.user_id.clone().to_string(),
+            client_id: repo_session.client_id.clone().unwrap().to_string(),
+            scopes: repo_session.scopes.clone().unwrap_or(vec![])
+        }).await {
+            Ok(e) => e,
+            Err(e) => return Err(e)
+        };
+
         let Ok(access_token) = generate_access_token(
             repo_session.scopes.unwrap_or(vec![]),
             chrono::Utc::now(),
@@ -108,6 +120,7 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
             TokenResponse {
                 access_token,
                 refresh_token,
+                id_token,
             },
             StatusCode::OK
         ))
@@ -119,9 +132,10 @@ impl TokenAuthorizationCodeUseCase {
         cache: Arc<RedisCache>,
         repository: Arc<OAuthSessionRepository>,
         token_repository: Arc<OAuthTokenRepository>,
-        client_repository: Arc<OAuthClientRepository>
+        client_repository: Arc<OAuthClientRepository>,
+        idp_gateway: Arc<IdpGateway>,
     ) -> Self {
-        Self { cache, repository, token_repository, client_repository  }
+        Self { cache, repository, token_repository, client_repository, idp_gateway  }
     }
 
     fn validate_request(&self, data: Arc<TokenRequest>) -> Result<(), ApiError> {

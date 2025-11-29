@@ -2,6 +2,7 @@ use std::env;
 use std::sync::Arc;
 use actix_web::http::StatusCode;
 use jsonwebtoken::EncodingKey;
+use crate::adapters::spi::gateways::idp::IdpGateway;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::application::api::use_case::UseCaseInterface;
@@ -11,6 +12,7 @@ use crate::dto::auth::token::response::TokenResponse;
 use crate::utils::api_response::{ApiError, ApiSuccess};
 use crate::utils::hasher::hash_sha256;
 use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
+use crate::domain::idp_id_token::IdPIdTokenPayload;
 use crate::domain::oauth_client::OauthClient;
 use crate::domain::oauth_session::OauthSession;
 use crate::domain::oauth_token::OauthToken;
@@ -19,7 +21,8 @@ use crate::utils::token::{generate_access_token, generate_refresh_token};
 pub struct TokenRefreshUseCase {
     repository: Arc<OAuthSessionRepository>,
     token_repository: Arc<OAuthTokenRepository>,
-    client_repository: Arc<OAuthClientRepository>
+    client_repository: Arc<OAuthClientRepository>,
+    idp_gateway: Arc<IdpGateway>,
 }
 
 impl UseCaseInterface for TokenRefreshUseCase {
@@ -60,6 +63,15 @@ impl UseCaseInterface for TokenRefreshUseCase {
             return Err(e);
         }
 
+        let id_token = match self.idp_gateway.get_id_token_v1(IdPIdTokenPayload {
+            user_id: repo_session.user_id.clone().unwrap().to_string(),
+            client_id: repo_session.client_id.clone().unwrap().to_string(),
+            scopes: repo_session.scopes.clone().unwrap_or(vec![])
+        }).await {
+            Ok(e) => e,
+            Err(e) => return Err(e)
+        };
+
         let Ok(access_token) = generate_access_token(
             scopes,
             chrono::Utc::now(),
@@ -90,6 +102,7 @@ impl UseCaseInterface for TokenRefreshUseCase {
             TokenResponse {
                 access_token,
                 refresh_token,
+                id_token,
             },
             StatusCode::OK
         ))
@@ -100,9 +113,10 @@ impl TokenRefreshUseCase {
     pub fn new(
         repository: Arc<OAuthSessionRepository>,
         token_repository: Arc<OAuthTokenRepository>,
-        client_repository: Arc<OAuthClientRepository>
+        client_repository: Arc<OAuthClientRepository>,
+        idp_gateway: Arc<IdpGateway>,
     ) -> Self {
-        Self { repository, token_repository, client_repository  }
+        Self { repository, token_repository, client_repository, idp_gateway  }
     }
 
     fn validate_request(&self, data: Arc<TokenRefreshRequest>) -> Result<(), ApiError> {
