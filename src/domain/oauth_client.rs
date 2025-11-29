@@ -1,4 +1,4 @@
-#[derive(sqlx::FromRow, Debug, serde::Serialize)]
+#[derive(sqlx::FromRow, Debug, serde::Serialize, Clone)]
 pub struct OauthClient {
     pub id: Option<uuid::Uuid>,
     pub name: Option<String>,

@@ -143,4 +143,16 @@ impl OAuthClientRepository {
             Err(_) => Err(String::from("Client not found"))
         }
     }
+
+    pub async fn get_by_slug(&self, slug: String) -> Result<OauthClient, String> {
+        let query = format!("SELECT * FROM {} WHERE slug = $1", self.table.clone());
+
+        match sqlx::query_as::<_, OauthClient>(&query)
+            .bind(slug)
+            .fetch_one(&self.db.pool)
+            .await {
+            Ok(e) => Ok(e),
+            Err(_) => Err(String::from("Client not found"))
+        }
+    }
 }
