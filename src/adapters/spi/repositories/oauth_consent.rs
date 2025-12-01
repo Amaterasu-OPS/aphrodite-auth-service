@@ -51,8 +51,7 @@ impl RepositoryInterface for OAuthConsentRepository {
             .bind(id)
             .fetch_one(&self.db.pool).await {
             Ok(e) => Ok(e),
-            Err(e) => {
-                println!("{}", e);
+            Err(_) => {
                 Err(String::from("Cannot retrieve consent"))
             }
         }

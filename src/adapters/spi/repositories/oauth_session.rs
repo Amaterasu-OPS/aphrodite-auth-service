@@ -57,10 +57,7 @@ impl RepositoryInterface for OAuthSessionRepository {
             .bind(id)
             .fetch_one(&self.db.pool).await {
             Ok(e) => Ok(e),
-            Err(e) => {
-                println!("{}", e);
-                Err(String::from("Cannot retrieve session"))
-            }
+            Err(e) => Err(String::from("Cannot retrieve session"))
         }
     }
 
