@@ -1,12 +1,14 @@
-insert into oauth_client (
+INSERT INTO oauth_client (
     "name",
     "scopes",
+    "mandatory_scopes",
     "slug",
     "status",
     "urls"
-) values (
+) VALUES (
     'Amaterasu',
-    '{"openid"}',
+    '{"openid", "profile", "email", "offline_access"}',
+    '{"openid", "email", "offline_access"}',
     'amaterasu',
     1,
     '{"http://localhost:3000/callback"}'

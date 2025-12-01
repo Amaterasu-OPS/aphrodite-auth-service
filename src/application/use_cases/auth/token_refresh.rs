@@ -1,4 +1,5 @@
 use std::env;
+use std::ops::Add;
 use std::sync::Arc;
 use actix_web::http::StatusCode;
 use jsonwebtoken::EncodingKey;
@@ -85,16 +86,18 @@ impl UseCaseInterface for TokenRefreshUseCase {
         };
 
         let refresh_token = generate_refresh_token();
+        let exp = chrono::Utc::now().add(chrono::Duration::days(7));
 
         if let Err(_) = self.token_repository.edit(token.id.unwrap(), OauthToken {
             id: None,
             session_id: None,
             access_token: Some(hash_sha256(access_token.clone().as_str())),
             refresh_token: Some(hash_sha256(refresh_token.clone().as_str())),
+            refresh_token_expires_at: Some(exp.naive_utc()),
             status: None,
             created_at: None,
             updated_at: None,
-        }, vec!["access_token", "refresh_token"]).await {
+        }, vec!["access_token", "refresh_token", "refresh_token_expires_at"]).await {
             return Err(ApiError::new(String::from("Failed to save token"), StatusCode::INTERNAL_SERVER_ERROR))
         }
 

@@ -1,4 +1,5 @@
 use std::env;
+use std::ops::Add;
 use std::sync::Arc;
 use actix_web::http::StatusCode;
 use jsonwebtoken::EncodingKey;
@@ -103,12 +104,15 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
         if let Err(_) = conn.del::<String, String>(arc_data.code.clone()).await {
             return Err(ApiError::new(String::from("Failed to delete code"), StatusCode::INTERNAL_SERVER_ERROR))
         }
+        
+        let exp = chrono::Utc::now().add(chrono::Duration::days(7));
 
         if let Err(_) = self.token_repository.insert(OauthToken {
             id: None,
             session_id: Some(session.session_id.clone()),
             access_token: Some(hash_sha256(access_token.clone().as_str())),
             refresh_token: Some(hash_sha256(refresh_token.clone().as_str())),
+            refresh_token_expires_at: Some(exp.naive_utc()),
             status: None,
             created_at: None,
             updated_at: None,
