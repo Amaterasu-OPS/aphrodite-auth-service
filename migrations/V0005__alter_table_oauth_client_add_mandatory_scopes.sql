@@ -1,0 +1,2 @@
+ALTER TABLE oauth_client ADD COLUMN IF NOT EXISTS mandatory_scopes _TEXT DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE oauth_token ADD COLUMN IF NOT EXISTS refresh_token_expires_at TIMESTAMP DEFAULT NULL;

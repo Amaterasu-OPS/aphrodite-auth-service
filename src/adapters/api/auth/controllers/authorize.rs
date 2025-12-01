@@ -2,6 +2,7 @@ use std::sync::Arc;
 use actix_web::http::StatusCode;
 use actix_web::HttpResponse;
 use crate::adapters::spi::cache::redis::RedisCache;
+use crate::adapters::spi::repositories::oauth_consent::OAuthConsentRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::application::api::controller::ControllerInterface;
 use crate::application::api::use_case::UseCaseInterface;
@@ -13,6 +14,7 @@ use crate::utils::api_response::{ApiError, ApiErrorResponse, ApiSuccess};
 pub struct AuthorizeController {
     cache: Arc<RedisCache>,
     repository: Arc<OAuthSessionRepository>,
+    consent_repository: Arc<OAuthConsentRepository>,
 }
 
 impl ControllerInterface for AuthorizeController {
@@ -20,10 +22,11 @@ impl ControllerInterface for AuthorizeController {
     type Result = HttpResponse;
 
     async fn handle(&self, data: Self::Data) -> Self::Result {
-        if !data.auth_token.is_none()  {
+        if !data.session_id.is_none()  {
             return self.format_result(AuthorizeContinueUseCase::new(
                 self.cache.clone(),
                 self.repository.clone(),
+                self.consent_repository.clone()
             ).handle(data).await);
         }
 
@@ -38,10 +41,12 @@ impl AuthorizeController {
     pub fn new(
         cache: Arc<RedisCache>,
         repository: Arc<OAuthSessionRepository>,
+        consent_repository: Arc<OAuthConsentRepository>,
     ) -> Self {
         Self {
             cache,
             repository,
+            consent_repository,
         }
     }
     fn format_result(&self, result: Result<ApiSuccess<String>, ApiError>) -> HttpResponse {

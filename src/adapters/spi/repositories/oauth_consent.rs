@@ -1,19 +1,21 @@
 use std::sync::Arc;
+use sqlx::Error::RowNotFound;
+use uuid::Uuid;
 use crate::adapters::spi::db::postgres_db::PostgresDB;
 use crate::application::spi::repository::RepositoryInterface;
-use crate::domain::oauth_client::OauthClient;
+use crate::domain::oauth_consent::OauthConsent;
 use crate::for_each_field;
 
-pub struct OAuthClientRepository {
+pub struct OAuthConsentRepository {
     db: Arc<PostgresDB>,
     table: String,
 }
 
 #[allow(unused)]
-impl RepositoryInterface for OAuthClientRepository {
+impl RepositoryInterface for OAuthConsentRepository {
     type DB = PostgresDB;
-    type Model = OauthClient;
-    type Id = uuid::Uuid;
+    type Model = OauthConsent;
+    type Id = Uuid;
 
     fn new(table_name: String, pool: Arc<Self::DB>) -> Self {
         Self {
@@ -25,17 +27,15 @@ impl RepositoryInterface for OAuthClientRepository {
     async fn insert(&self, data: Self::Model) -> Result<Self::Model, String> {
         let query = format!(r#"
             INSERT INTO {} (
-                name,
-                slug,
-                urls,
+                user_id,
+                client_id,
                 scopes
-            ) VALUES ($1, $2, $3, $4) RETURNING id
+            ) VALUES ($1, $2, $3) RETURNING id
             "#, self.table.clone());
 
         let insert_result = sqlx::query_scalar::<_, uuid::Uuid>(&query)
-            .bind(data.name)
-            .bind(data.slug)
-            .bind(data.urls)
+            .bind(data.user_id)
+            .bind(data.client_id)
             .bind(data.scopes)
             .fetch_one(&self.db.pool)
             .await;
@@ -43,7 +43,7 @@ impl RepositoryInterface for OAuthClientRepository {
         let id = match insert_result {
             Ok(id) => id,
             Err(_) => {
-                return Err(String::from("Failed to insert client"))
+                return Err(String::from("Failed to insert consent"))
             }
         };
 
@@ -51,7 +51,10 @@ impl RepositoryInterface for OAuthClientRepository {
             .bind(id)
             .fetch_one(&self.db.pool).await {
             Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Cannot retrieve client"))
+            Err(e) => {
+                println!("{}", e);
+                Err(String::from("Cannot retrieve consent"))
+            }
         }
     }
 
@@ -83,11 +86,11 @@ impl RepositoryInterface for OAuthClientRepository {
             .map_err(|_| String::from("Failed to serialize model for update"))?;
 
         let mut query =
-            sqlx::QueryBuilder::new(format!("UPDATE {} SET ", self.table));
+            sqlx::QueryBuilder::new(format!("UPDATE {} SET", self.table));
 
         let mut set_clauses = query.separated(", ");
 
-        for_each_field!(data, { name, urls, scopes, status }, |k: &str, v| {
+        for_each_field!(data, { scopes, status }, |k: &str, v| {
             if fields.contains(&k) {
                 set_clauses.push(format!(" {} = ", k));
                 set_clauses.push_bind_unseparated(v);
@@ -97,11 +100,11 @@ impl RepositoryInterface for OAuthClientRepository {
         query.push(" WHERE id = ");
         query.push_bind(id);
 
-        query
-            .build()
-            .execute(&self.db.pool)
+        let mut sql = query.build();
+
+        sql.execute(&self.db.pool)
             .await
-            .map_err(|_| String::from("Failed to update client"))?;
+            .map_err(|_| String::from("Failed to update consent"))?;
 
         self.get(id).await
     }
@@ -114,45 +117,36 @@ impl RepositoryInterface for OAuthClientRepository {
             .fetch_one(&self.db.pool)
             .await {
             Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Client not found"))
+            Err(_) => Err(String::from("Consent not found"))
         }
     }
 
     async fn delete(&self, id: Self::Id) -> Result<Self::Id, String> {
+
         match sqlx::query(&format!("DELETE FROM {} WHERE id = $1", self.table.clone()))
             .bind(id)
             .execute(&self.db.pool)
             .await {
             Ok(_) => Ok(id),
-            Err(_) => Err(String::from("Client not found"))
+            Err(_) => Err(String::from("Consent not found"))
         }
     }
 }
 
-#[allow(unused)]
-impl OAuthClientRepository {
-    pub async fn get_by_slug_secret(&self, slug: String, secret: String) -> Result<OauthClient, String> {
-        let query = format!("SELECT * FROM {} WHERE slug = $1 and secret = $2", self.table.clone());
+impl OAuthConsentRepository {
+    pub(crate) async fn get_by_client_and_user_id(&self, client_id: String, user_id: Uuid) -> Result<OauthConsent, String> {
+        let query = format!("SELECT * FROM {} WHERE client_id = $1 and user_id = $2", self.table.clone());
 
-        match sqlx::query_as::<_, OauthClient>(&query)
-            .bind(slug)
-            .bind(secret)
+        match sqlx::query_as::<_, OauthConsent>(&query)
+            .bind(client_id)
+            .bind(user_id)
             .fetch_one(&self.db.pool)
             .await {
             Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Client not found"))
-        }
-    }
-
-    pub async fn get_by_slug(&self, slug: String) -> Result<OauthClient, String> {
-        let query = format!("SELECT * FROM {} WHERE slug = $1", self.table.clone());
-
-        match sqlx::query_as::<_, OauthClient>(&query)
-            .bind(slug)
-            .fetch_one(&self.db.pool)
-            .await {
-            Ok(e) => Ok(e),
-            Err(_) => Err(String::from("Client not found"))
+            Err(e) => match e {
+                RowNotFound => Err(String::from("Consent not found")),
+                _ => Err(format!("Failed to query consent: {}", e)),
+            }
         }
     }
 }

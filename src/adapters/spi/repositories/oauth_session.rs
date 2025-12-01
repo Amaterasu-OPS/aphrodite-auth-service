@@ -16,7 +16,7 @@ impl RepositoryInterface for OAuthSessionRepository {
     type Id = uuid::Uuid;
 
     fn new(table_name: String, pool: Arc<Self::DB>) -> Self {
-        OAuthSessionRepository {
+        Self {
             db: pool,
             table: table_name,
         }
@@ -96,7 +96,7 @@ impl RepositoryInterface for OAuthSessionRepository {
 
         let mut set_clauses = query.separated(", ");
 
-        for_each_field!(data, { user_id, status, scopes }, |k: &str, v| {
+        for_each_field!(data, { user_id, status, scopes, consent_granted_at }, |k: &str, v| {
             if fields.contains(&k) {
                 set_clauses.push(format!(" {} = ", k));
                 set_clauses.push_bind_unseparated(v);

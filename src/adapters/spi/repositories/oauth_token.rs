@@ -16,7 +16,7 @@ impl RepositoryInterface for OAuthTokenRepository {
     type Id = uuid::Uuid;
 
     fn new(table_name: String, pool: Arc<Self::DB>) -> Self {
-        OAuthTokenRepository {
+        Self {
             db: pool,
             table: table_name,
         }
@@ -88,7 +88,7 @@ impl RepositoryInterface for OAuthTokenRepository {
 
         let mut set_clauses = query.separated(", ");
 
-        for_each_field!(data, { access_token, refresh_token, status }, |k: &str, v| {
+        for_each_field!(data, { access_token, refresh_token, status, refresh_token_expires_at }, |k: &str, v| {
             if fields.contains(&k) {
                 set_clauses.push(format!(" {} = ", k));
                 set_clauses.push_bind_unseparated(v);

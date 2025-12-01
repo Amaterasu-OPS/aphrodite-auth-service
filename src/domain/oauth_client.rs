@@ -6,6 +6,7 @@ pub struct OauthClient {
     pub secret: Option<String>,
     pub urls: Option<Vec<String>>,
     pub scopes: Option<Vec<String>>,
+    pub mandatory_scopes: Option<Vec<String>>,
     pub status: Option<i32>,
     pub created_at: Option<chrono::NaiveDateTime>,
     pub updated_at: Option<chrono::NaiveDateTime>,

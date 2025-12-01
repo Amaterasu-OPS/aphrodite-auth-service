@@ -6,36 +6,28 @@ use crate::adapters::spi::cache::cache::CacheAdapter;
 use crate::adapters::spi::cache::redis::RedisCache;
 use crate::adapters::spi::db::db::DBAdapter;
 use crate::adapters::spi::db::postgres_db::PostgresDB;
-use crate::adapters::spi::gateways::idp::IdpGateway;
-use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
-use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
-use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
-use crate::application::spi::repository::RepositoryInterface;
+use crate::infra::dependencies::add_dependencies;
 
 pub async fn start_app() -> std::io::Result<()> {
     let psql = Arc::new(DBAdapter::get_db_connection::<PostgresDB>().await.expect("Failed to connect to postgres database"));
-    let redis = CacheAdapter::get_cache_connection::<RedisCache>().expect("Failed to connect to redis");
-    
-    let oauth_client_repository = web::Data::new(OAuthClientRepository::new(String::from("oauth_client"), psql.clone()));
-    let oauth_session_repository = web::Data::new(OAuthSessionRepository::new(String::from("oauth_session"), psql.clone()));
-    let oauth_token_repository = web::Data::new(OAuthTokenRepository::new(String::from("oauth_token"), psql.clone()));
-    
-    let idp_gateway = web::Data::new(IdpGateway::new());
-
-    let redis_cache = web::Data::new(redis);
+    let redis = Arc::new(CacheAdapter::get_cache_connection::<RedisCache>().expect("Failed to connect to redis"));
 
     HttpServer::new(move || {
+        let cors = actix_cors::Cors::default()
+            .allowed_origin("http://localhost:3001");
+        
         App::new()
         .wrap(Logger::default())
+        .wrap(cors)
         .service(web::scope("/api/v1")
             .service(api::health::router::health_router())
             .service(api::auth::router::auth_router())
         )
-        .app_data(redis_cache.clone())
-        .app_data(oauth_client_repository.clone())
-        .app_data(oauth_session_repository.clone())
-        .app_data(oauth_token_repository.clone())
-        .app_data(idp_gateway.clone())
+        .configure(|config| add_dependencies(
+            config,
+            psql.clone(),
+            redis.clone()
+        ))
     })
     .bind(("0.0.0.0", 8000))?
     .run()
