@@ -5,15 +5,13 @@ services:
       dockerfile: ./docker/dev/Dockerfile
     container_name: auth-service
     command: cargo watch -x run
-    ports:
-      - "8000:8000"
     depends_on:
       - db-auth
       - redis-auth
     volumes:
       - ./:/app
     networks:
-      - auth-service-network
+      - amaterasu-network
 
   redis-auth:
     image: "redis:7.0-alpine"
@@ -21,7 +19,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - auth-service-network
+      - amaterasu-network
 
   db-auth:
     image: postgres:16
@@ -35,7 +33,7 @@ services:
     volumes:
       - ./storage/db:/var/lib/postgresql/data
     networks:
-      - auth-service-network
+      - amaterasu-network
 
   flyway-auth:
     image: flyway/flyway
@@ -46,8 +44,9 @@ services:
     depends_on:
       - db-auth
     networks:
-      - auth-service-network
+      - amaterasu-network
 
 networks:
-  auth-service-network:
-    name: auth-service-network
+  amaterasu-network:
+    name: amaterasu-network
+    driver: bridge
