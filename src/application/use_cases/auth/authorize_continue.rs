@@ -3,10 +3,12 @@ use actix_web::http::StatusCode;
 use redis::AsyncCommands;
 use uuid::Uuid;
 use crate::adapters::spi::cache::redis::RedisCache;
+use crate::adapters::spi::gateways::idp::IdpGateway;
 use crate::adapters::spi::repositories::oauth_consent::OAuthConsentRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::application::api::use_case::UseCaseInterface;
 use crate::application::spi::repository::RepositoryInterface;
+use crate::domain::idp::IdpVerifyCredentialRequest;
 use crate::domain::oauth_session::OauthSession;
 use crate::dto::auth::authorize::request::AuthorizeRequest;
 use crate::dto::auth::authorize::token_data::TokenData;
@@ -16,6 +18,7 @@ pub struct AuthorizeContinueUseCase {
     cache: Arc<RedisCache>,
     repository: Arc<OAuthSessionRepository>,
     consent_repository: Arc<OAuthConsentRepository>,
+    idp_gateway: Arc<IdpGateway>
 }
 
 impl UseCaseInterface for AuthorizeContinueUseCase {
@@ -50,6 +53,10 @@ impl UseCaseInterface for AuthorizeContinueUseCase {
                 return Err(e)
             }
         } else {
+            if let Err(e) = self.check_auth_token(arc_data.auth_token.clone().unwrap()).await {
+                return Err(e)
+            }
+
             if let Err(e) = self.save_user_and_consent(&mut session, user_uuid).await {
                 if e.status_code == StatusCode::SEE_OTHER {
                     return Ok(ApiSuccess::new(e.error, StatusCode::SEE_OTHER))
@@ -83,8 +90,8 @@ impl UseCaseInterface for AuthorizeContinueUseCase {
 
 #[allow(unused)]
 impl AuthorizeContinueUseCase {
-    pub fn new(cache: Arc<RedisCache>, repository: Arc<OAuthSessionRepository>, consent_repository: Arc<OAuthConsentRepository>) -> Self {
-        Self { cache, repository, consent_repository }
+    pub fn new(cache: Arc<RedisCache>, repository: Arc<OAuthSessionRepository>, consent_repository: Arc<OAuthConsentRepository>, idp_gateway: Arc<IdpGateway>) -> Self {
+        Self { cache, repository, consent_repository, idp_gateway }
     }
 
     async fn validate_query(&self, data: Arc<AuthorizeRequest>) -> Result<(), String> {
@@ -161,6 +168,18 @@ impl AuthorizeContinueUseCase {
             if e.user_id.unwrap() != session.user_id.clone().unwrap() || e.client_id.unwrap() != session.client_id.clone().unwrap() {
                 return Err(ApiError::new("Invalid consent ID".to_string(), StatusCode::UNPROCESSABLE_ENTITY))
             }
+        }
+
+        Ok(())
+    }
+
+    async fn check_auth_token(&self, auth_token: String) -> Result<(), ApiError> {
+        let Ok(result) = self.idp_gateway.verify_auth_token_v1(IdpVerifyCredentialRequest{ token: auth_token }).await else {
+            return Err(ApiError::new("Invalid auth token".to_string(), StatusCode::UNPROCESSABLE_ENTITY))
+        };
+
+        if !result {
+            return Err(ApiError::new("Invalid auth token".to_string(), StatusCode::UNPROCESSABLE_ENTITY))
         }
 
         Ok(())

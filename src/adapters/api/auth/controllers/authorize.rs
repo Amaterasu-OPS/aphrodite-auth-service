@@ -2,6 +2,7 @@ use std::sync::Arc;
 use actix_web::http::StatusCode;
 use actix_web::HttpResponse;
 use crate::adapters::spi::cache::redis::RedisCache;
+use crate::adapters::spi::gateways::idp::IdpGateway;
 use crate::adapters::spi::repositories::oauth_consent::OAuthConsentRepository;
 use crate::adapters::spi::repositories::oauth_session::OAuthSessionRepository;
 use crate::application::api::controller::ControllerInterface;
@@ -15,6 +16,7 @@ pub struct AuthorizeController {
     cache: Arc<RedisCache>,
     repository: Arc<OAuthSessionRepository>,
     consent_repository: Arc<OAuthConsentRepository>,
+    idp_gateway: Arc<IdpGateway>
 }
 
 impl ControllerInterface for AuthorizeController {
@@ -26,7 +28,8 @@ impl ControllerInterface for AuthorizeController {
             return self.format_result(AuthorizeContinueUseCase::new(
                 self.cache.clone(),
                 self.repository.clone(),
-                self.consent_repository.clone()
+                self.consent_repository.clone(),
+                self.idp_gateway.clone()
             ).handle(data).await);
         }
 
@@ -42,11 +45,13 @@ impl AuthorizeController {
         cache: Arc<RedisCache>,
         repository: Arc<OAuthSessionRepository>,
         consent_repository: Arc<OAuthConsentRepository>,
+        idp_gateway: Arc<IdpGateway>
     ) -> Self {
         Self {
             cache,
             repository,
             consent_repository,
+            idp_gateway,
         }
     }
     fn format_result(&self, result: Result<ApiSuccess<String>, ApiError>) -> HttpResponse {

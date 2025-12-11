@@ -44,11 +44,13 @@ async fn authorize_handler(
     cache: web::Data<RedisCache>,
     repository: web::Data<OAuthSessionRepository>,
     consent_repository: web::Data<OAuthConsentRepository>,
+    idp_gateway: web::Data<IdpGateway>,
 ) -> impl Responder {
     AuthorizeController::new(
         cache.into_inner(),
         repository.into_inner(),
-        consent_repository.into_inner()
+        consent_repository.into_inner(),
+        idp_gateway.into_inner(),
     ).handle(data.into_inner()).await
 }
 

@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use crate::adapters::spi::gateways::idp::IdpGateway;
 use crate::adapters::spi::repositories::oauth_client::OAuthClientRepository;
 use crate::adapters::spi::repositories::oauth_token::OAuthTokenRepository;
-use crate::domain::idp_id_token::IdPIdTokenPayload;
+use crate::domain::idp::IdPIdTokenRequest;
 use crate::domain::oauth_client::OauthClient;
 use crate::domain::oauth_session::OauthSession;
 use crate::domain::oauth_token::OauthToken;
@@ -78,7 +78,7 @@ impl UseCaseInterface for TokenAuthorizationCodeUseCase {
             return Err(e);
         }
 
-        let id_token = match self.idp_gateway.get_id_token_v1(IdPIdTokenPayload {
+        let id_token = match self.idp_gateway.get_id_token_v1(IdPIdTokenRequest {
             user_id: session.user_id.clone().to_string(),
             client_id: repo_session.client_id.clone().unwrap().to_string(),
             scopes: repo_session.scopes.clone().unwrap_or(vec![])
