@@ -35,6 +35,7 @@ impl UseCaseInterface for ConsentInfoUseCase {
             scopes: client.scopes.unwrap(),
             name: client.name.unwrap(),
             mandatory_scopes: client.mandatory_scopes.unwrap(),
+            logos: client.logos.unwrap().to_vec(),
             created_at: client.created_at.unwrap(),
         }, StatusCode::OK))
     }

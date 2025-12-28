@@ -8,6 +8,10 @@ pub struct ApiError {
 
 impl ApiError {
     pub fn new(error: String, status_code: StatusCode) -> Self {
+        if std::env::var("RUST_LOG").unwrap_or("INFO".to_string()).to_lowercase().contains("debug") {
+            eprintln!("[ERROR] {}", error);
+        }
+
         Self { error, status_code: status_code.as_u16() }
     }
 }

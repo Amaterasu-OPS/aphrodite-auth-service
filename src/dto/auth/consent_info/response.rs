@@ -4,5 +4,6 @@ pub struct ConsentInfoResponse {
     pub name: String,
     pub scopes: Vec<String>,
     pub mandatory_scopes: Vec<String>,
+    pub logos: Vec<String>,
     pub created_at: chrono::NaiveDateTime,
 }
